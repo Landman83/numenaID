@@ -29,6 +29,7 @@ contract IdentityTest is Test {
     
     // Claim data - using actual topics from documentation
     uint256 constant INDIVIDUAL_INVESTOR = 10101000100000;  // From docs
+    uint256 constant ACCREDITED_INVESTOR = 10101000100001;  // From docs
     uint256 constant STRING_SCHEME = 10101000666003;       // From docs
     bytes constant CLAIM_SIGNATURE = "signature";
     bytes constant CLAIM_DATA = "data";
@@ -249,5 +250,166 @@ contract IdentityTest is Test {
         vm.expectEmit(true, true, true, true);
         emit KeyAdded(issuerKey, 3, 1);
         identityContract.addKey(issuerKey, 3);
+    }
+    
+    function testStandardClaimTopics() public {
+        vm.startPrank(claimIssuer);
+        
+        // Test INDIVIDUAL_INVESTOR claim
+        bytes32 individualClaimId = identityContract.addClaim(
+            INDIVIDUAL_INVESTOR,
+            STRING_SCHEME,
+            claimIssuer,
+            CLAIM_SIGNATURE,
+            CLAIM_DATA,
+            CLAIM_URI
+        );
+        
+        // Test ACCREDITED_INVESTOR claim
+        bytes32 accreditedClaimId = identityContract.addClaim(
+            ACCREDITED_INVESTOR,
+            STRING_SCHEME,
+            claimIssuer,
+            CLAIM_SIGNATURE,
+            CLAIM_DATA,
+            CLAIM_URI
+        );
+        
+        assertTrue(identityContract.hasValidClaim(INDIVIDUAL_INVESTOR, claimIssuer));
+        assertTrue(identityContract.hasValidClaim(ACCREDITED_INVESTOR, claimIssuer));
+        
+        vm.stopPrank();
+    }
+    
+    function testDifferentClaimSchemes() public {
+        vm.startPrank(claimIssuer);
+        
+        // Test STRING scheme
+        bytes32 stringClaimId = identityContract.addClaim(
+            INDIVIDUAL_INVESTOR,
+            STRING_SCHEME,
+            claimIssuer,
+            CLAIM_SIGNATURE,
+            "Individual Investor",
+            CLAIM_URI
+        );
+        
+        // Test URL scheme
+        bytes32 urlClaimId = identityContract.addClaim(
+            INDIVIDUAL_INVESTOR,
+            STRING_SCHEME,
+            claimIssuer,
+            CLAIM_SIGNATURE,
+            "https://example.com/proof",
+            CLAIM_URI
+        );
+        
+        // Test HASH scheme
+        bytes32 hashClaimId = identityContract.addClaim(
+            INDIVIDUAL_INVESTOR,
+            STRING_SCHEME,
+            claimIssuer,
+            CLAIM_SIGNATURE,
+            abi.encodePacked(keccak256("proof")),
+            CLAIM_URI
+        );
+        
+        // Verify all claims exist
+        assertTrue(identityContract.hasValidClaim(INDIVIDUAL_INVESTOR, claimIssuer));
+        
+        vm.stopPrank();
+    }
+    
+    function testClaimVerification() public {
+        // Create a real signature
+        bytes32 dataHash = keccak256(abi.encode(
+            INDIVIDUAL_INVESTOR,
+            STRING_SCHEME,
+            claimIssuer,
+            CLAIM_DATA
+        ));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(claimIssuerPrivateKey, dataHash);
+        bytes memory signature = abi.encodePacked(r, s, v);
+        
+        vm.prank(claimIssuer);
+        bytes32 claimId = identityContract.addClaim(
+            INDIVIDUAL_INVESTOR,
+            STRING_SCHEME,
+            claimIssuer,
+            signature,
+            CLAIM_DATA,
+            CLAIM_URI
+        );
+        
+        bool isValid = identityContract.verifyClaim(
+            claimId,
+            INDIVIDUAL_INVESTOR,
+            STRING_SCHEME,
+            claimIssuer,
+            signature,
+            CLAIM_DATA
+        );
+        
+        assertTrue(isValid, "Claim verification failed");
+    }
+    
+    function testInvalidClaimVerification() public {
+        vm.prank(claimIssuer);
+        bytes32 claimId = identityContract.addClaim(
+            INDIVIDUAL_INVESTOR,
+            STRING_SCHEME,
+            claimIssuer,
+            CLAIM_SIGNATURE,
+            CLAIM_DATA,
+            CLAIM_URI
+        );
+        
+        // Test with wrong topic
+        bool isValidWrongTopic = identityContract.verifyClaim(
+            claimId,
+            ACCREDITED_INVESTOR, // Wrong topic
+            STRING_SCHEME,
+            claimIssuer,
+            CLAIM_SIGNATURE,
+            CLAIM_DATA
+        );
+        assertFalse(isValidWrongTopic, "Should fail with wrong topic");
+        
+        // Test with wrong issuer
+        bool isValidWrongIssuer = identityContract.verifyClaim(
+            claimId,
+            INDIVIDUAL_INVESTOR,
+            STRING_SCHEME,
+            randomUser, // Wrong issuer
+            CLAIM_SIGNATURE,
+            CLAIM_DATA
+        );
+        assertFalse(isValidWrongIssuer, "Should fail with wrong issuer");
+    }
+    
+    function testERC735Events() public {
+        vm.startPrank(claimIssuer);
+        
+        bytes32 expectedClaimId = keccak256(abi.encodePacked(INDIVIDUAL_INVESTOR, claimIssuer));
+        
+        // Test ClaimAdded event
+        vm.expectEmit(true, true, true, true);
+        emit ClaimAdded(expectedClaimId, INDIVIDUAL_INVESTOR, claimIssuer);
+        
+        bytes32 claimId = identityContract.addClaim(
+            INDIVIDUAL_INVESTOR,
+            STRING_SCHEME,
+            claimIssuer,
+            CLAIM_SIGNATURE,
+            CLAIM_DATA,
+            CLAIM_URI
+        );
+        
+        // Test ClaimRemoved event
+        vm.expectEmit(true, true, true, true);
+        emit ClaimRemoved(claimId, INDIVIDUAL_INVESTOR, claimIssuer);
+        identityContract.removeClaim(claimId);
+        
+        vm.stopPrank();
     }
 } 

@@ -29,6 +29,16 @@ contract Identity is Initializable, OwnableUpgradeable {
     uint256 private constant _CLAIM_SIGNER_KEY = 3;
     uint256 private constant _ENCRYPTION_KEY = 4;
 
+    // Add these constants for standardized claim topics
+    uint256 constant INDIVIDUAL_INVESTOR = 10101000100000;
+    uint256 constant ACCREDITED_INVESTOR = 10101000100001;
+    uint256 constant INSTITUTIONAL_INVESTOR = 10101000100002;
+    
+    // Claim schemes
+    uint256 constant SCHEME_STRING = 10101000666003;
+    uint256 constant SCHEME_URL = 10101000666004;
+    uint256 constant SCHEME_HASH = 10101000666005;
+
     // Storage for keys
     mapping(bytes32 => Key) private _keys;
     mapping(uint256 => bytes32[]) private _keysByPurpose;
@@ -286,4 +296,11 @@ contract Identity is Initializable, OwnableUpgradeable {
         bytes32 issuerKey = keccak256(abi.encode(_issuer));
         return keyHasPurpose(issuerKey, _CLAIM_SIGNER_KEY);
     }
+}
+
+interface IERC735 {
+    event ClaimRequested(uint256 indexed claimType, uint256 scheme, address indexed issuer, bytes signature, bytes data, string uri);
+    event ClaimAdded(bytes32 indexed claimId, uint256 indexed topic, address indexed issuer);
+    event ClaimRemoved(bytes32 indexed claimId, uint256 indexed topic, address indexed issuer);
+    event ClaimChanged(bytes32 indexed claimId, uint256 indexed topic, address indexed issuer);
 }
