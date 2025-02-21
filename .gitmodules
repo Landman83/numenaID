@@ -7,3 +7,6 @@
 [submodule "numena-id/lib/solidity"]
 	path = numena-id/lib/solidity
 	url = https://github.com/onchain-id/solidity
+[submodule "numena-id/lib/openzeppelin-contracts"]
+	path = numena-id/lib/openzeppelin-contracts
+	url = https://github.com/OPenZeppelin/openzeppelin-contracts
