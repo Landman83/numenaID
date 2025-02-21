@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@onchain-id/solidity": "github:onchain-id/solidity"
+  }
+}
