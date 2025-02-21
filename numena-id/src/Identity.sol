@@ -217,4 +217,73 @@ contract Identity is Initializable, OwnableUpgradeable {
             claim.uri
         );
     }
+
+    // Verify a specific claim
+    function verifyClaim(
+        bytes32 _claimId,
+        uint256 _topic,
+        uint256 _scheme,
+        address _issuer,
+        bytes memory _signature,
+        bytes memory _data
+    ) external view returns (bool) {
+        Claim storage claim = _claims[_claimId];
+        
+        // Check claim exists
+        if (!claim.exists) return false;
+        
+        // Verify claim matches stored data
+        if (claim.topic != _topic) return false;
+        if (claim.scheme != _scheme) return false;
+        if (claim.issuer != _issuer) return false;
+        
+        // Verify issuer has claim signer key
+        bytes32 issuerKey = keccak256(abi.encode(_issuer));
+        if (!keyHasPurpose(issuerKey, _CLAIM_SIGNER_KEY)) return false;
+        
+        // Verify signature
+        bytes32 dataHash = keccak256(abi.encode(_topic, _scheme, _issuer, _data));
+        address recoveredSigner = recover(dataHash, _signature);
+        if (recoveredSigner != _issuer) return false;
+        
+        return true;
+    }
+    
+    // Helper function to recover signer from signature
+    function recover(bytes32 _hash, bytes memory _signature) internal pure returns (address) {
+        require(_signature.length == 65, "Invalid signature length");
+        
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        
+        assembly {
+            r := mload(add(_signature, 32))
+            s := mload(add(_signature, 64))
+            v := byte(0, mload(add(_signature, 96)))
+        }
+        
+        if (v < 27) {
+            v += 27;
+        }
+        
+        require(v == 27 || v == 28, "Invalid signature 'v' value");
+        
+        return ecrecover(_hash, v, r, s);
+    }
+    
+    // Convenience function to check if an identity has a specific claim type
+    function hasValidClaim(
+        uint256 _topic,
+        address _issuer
+    ) external view returns (bool) {
+        bytes32 claimId = keccak256(abi.encodePacked(_topic, _issuer));
+        Claim storage claim = _claims[claimId];
+        
+        if (!claim.exists) return false;
+        
+        // Verify issuer still has claim signer key
+        bytes32 issuerKey = keccak256(abi.encode(_issuer));
+        return keyHasPurpose(issuerKey, _CLAIM_SIGNER_KEY);
+    }
 }

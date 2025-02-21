@@ -12,7 +12,7 @@ contract IdentityTest is Test {
     Identity public identityContract;
     
     address public owner = address(0x1);
-    address public claimIssuer = address(0x2);
+    address public claimIssuer;  // Will be derived from private key
     address public randomUser = address(0x3);
     
     // Claim data - using actual topics from documentation
@@ -27,7 +27,13 @@ contract IdentityTest is Test {
     event ClaimRemoved(bytes32 indexed claimId, uint256 indexed topic, address indexed issuer);
     event KeyAdded(bytes32 indexed key, uint256 indexed purpose, uint256 indexed keyType);
     
+    // Use a proper private key (this is just for testing)
+    uint256 constant claimIssuerPrivateKey = 0x12345678;
+    
     function setUp() public {
+        // Derive claimIssuer address from private key
+        claimIssuer = vm.addr(claimIssuerPrivateKey);
+        
         // Deploy implementation and factory
         implementation = new Identity();
         factory = new IdentityFactory(address(implementation));
@@ -160,5 +166,56 @@ contract IdentityTest is Test {
         vm.prank(randomUser);
         vm.expectRevert("Only claim issuer or management key can remove claim");
         identityContract.removeClaim(claimId);
+    }
+    
+    function testVerifyClaim() public {
+        // Create signature
+        bytes32 dataHash = keccak256(abi.encode(
+            INDIVIDUAL_INVESTOR,
+            STRING_SCHEME,
+            claimIssuer,
+            CLAIM_DATA
+        ));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(claimIssuerPrivateKey, dataHash);
+        bytes memory signature = abi.encodePacked(r, s, v);
+        
+        // Add claim
+        vm.prank(claimIssuer);
+        bytes32 claimId = identityContract.addClaim(
+            INDIVIDUAL_INVESTOR,
+            STRING_SCHEME,
+            claimIssuer,
+            signature,
+            CLAIM_DATA,
+            CLAIM_URI
+        );
+        
+        // Verify claim
+        bool isValid = identityContract.verifyClaim(
+            claimId,
+            INDIVIDUAL_INVESTOR,
+            STRING_SCHEME,
+            claimIssuer,
+            signature,
+            CLAIM_DATA
+        );
+        
+        assertTrue(isValid, "Claim should be valid");
+    }
+    
+    function testHasValidClaim() public {
+        // Add claim
+        vm.prank(claimIssuer);
+        identityContract.addClaim(
+            INDIVIDUAL_INVESTOR,
+            STRING_SCHEME,
+            claimIssuer,
+            CLAIM_SIGNATURE,
+            CLAIM_DATA,
+            CLAIM_URI
+        );
+        
+        bool hasClaim = identityContract.hasValidClaim(INDIVIDUAL_INVESTOR, claimIssuer);
+        assertTrue(hasClaim, "Should have valid claim");
     }
 } 
