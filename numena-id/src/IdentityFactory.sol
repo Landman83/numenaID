@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/proxy/Clones.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./Identity.sol"; // The implementation contract
+import "./Identity.sol";  // Changed to relative path
 
 contract IdentityFactory is Ownable {
     address public implementationContract;
