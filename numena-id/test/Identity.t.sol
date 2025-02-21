@@ -6,6 +6,18 @@ import "forge-std/Test.sol";
 import "../src/Identity.sol";
 import "../src/IdentityFactory.sol";
 
+contract MockImplementationAuthority {
+    address private _implementation;
+    
+    constructor(address implementation) {
+        _implementation = implementation;
+    }
+    
+    function getImplementation() external view returns (address) {
+        return _implementation;
+    }
+}
+
 contract IdentityTest is Test {
     IdentityFactory public factory;
     Identity public implementation;
@@ -30,25 +42,34 @@ contract IdentityTest is Test {
     // Use a proper private key (this is just for testing)
     uint256 constant claimIssuerPrivateKey = 0x12345678;
     
+    MockImplementationAuthority public implementationAuthority;
+    
     function setUp() public {
         // Derive claimIssuer address from private key
         claimIssuer = vm.addr(claimIssuerPrivateKey);
         
-        // Deploy implementation and factory
+        // Deploy implementation
         implementation = new Identity();
-        factory = new IdentityFactory(address(implementation));
         
-        // Create identity for owner
-        vm.prank(owner);
-        address identityAddress = factory.createIdentity();
+        // Deploy implementation authority
+        implementationAuthority = new MockImplementationAuthority(address(implementation));
+        
+        // Deploy factory with implementation authority
+        factory = new IdentityFactory(address(implementationAuthority));
+        
+        // Create identity through factory
+        vm.startPrank(owner);  // Use startPrank instead of prank
+        address identityAddress = factory.createIdentity("test-salt");
         identityContract = Identity(identityAddress);
+        
+        // Debug ownership
+        console.log("Owner address:", owner);
+        console.log("Contract owner:", identityContract.owner());
         
         // Add claim issuer key
         bytes32 issuerKey = keccak256(abi.encode(claimIssuer));
-        vm.prank(owner);
-        vm.expectEmit(true, true, true, true);
-        emit KeyAdded(issuerKey, 3, 1);
-        identityContract.addKey(issuerKey, 3); // 3 = CLAIM_SIGNER_KEY
+        identityContract.addKey(issuerKey, 3);
+        vm.stopPrank();
     }
     
     function testClaimSignerKeyManagement() public {
@@ -217,5 +238,16 @@ contract IdentityTest is Test {
         
         bool hasClaim = identityContract.hasValidClaim(INDIVIDUAL_INVESTOR, claimIssuer);
         assertTrue(hasClaim, "Should have valid claim");
+    }
+    
+    // New test function specifically for event testing
+    function testKeyAddedEvent() public {
+        bytes32 issuerKey = keccak256(abi.encode(claimIssuer));
+        vm.prank(owner);
+        
+        // Check event emission
+        vm.expectEmit(true, true, true, true);
+        emit KeyAdded(issuerKey, 3, 1);
+        identityContract.addKey(issuerKey, 3);
     }
 } 
