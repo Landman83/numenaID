@@ -9,4 +9,4 @@
 	url = https://github.com/onchain-id/solidity
 [submodule "numena-id/lib/openzeppelin-contracts"]
 	path = numena-id/lib/openzeppelin-contracts
-	url = https://github.com/OPenZeppelin/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
