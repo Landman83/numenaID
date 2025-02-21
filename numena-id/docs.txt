@@ -1,0 +1,548 @@
+Introduction
+This section describes how developers can integrate their applications with the ONCHAINID platform.
+The ONCHAINID ecosystem comes with many tools and packages you can use to facilitate the integration of blockchain identities within your applications.
+The Identity SDK is designed to help developers fetching information regarding identities and verify their claims. It's also the most designated tool to manage identity contracts such as keys and claims.
+It is intended to support any identity compliant with the ERC734 and ERC735 standard, which are currently still working in progress. It will work especially well with the contract implementations of the T-REX standard.
+Core functionality
+The core functionality of the identity SDK is as follows.
+* Deploy identities
+* List keys on an Identity.
+* Manage keys on an Identity (if allowed).
+* List Claims on an Identity.
+* Manage Claims on an Identity (if allowed).
+* Issue claims for an Identity (if allowed).
+* Verify a claim (check validity).
+
+
+Getting started
+Installation​
+You can install the identity SDK as a dependency with the command npm install @onchain-id/identity-sdk
+you can then require the dependency in your application with
+const { IdentitySDK } = require('@onchain-id/identity-sdk');
+Or if you are using ES6
+import { IdentitySDK } from '@onchain-id/identity-sdk'
+Loading an Identity​
+The unique identifier of an Identity is its address. To load its data from the BlockChain, you need to instantiate a connection with a BlockChain provider. In this documentation, the test network ropsten will be used. Replace this with homestead to target the main network; see the BlockChain Providers for more information regarding the different types of network.
+const ethers = require('ethers');
+
+
+const provider = ethers.getDefaultProvider('ropsten');
+
+
+// instantiate an Identity from its address on a specific network.
+const identity = await IdentitySDK.Identity.at('0xadD92F8Ef0729E969c5a98Ea5740c9b644B362e3', { provider });
+Use the inbuilt SDK methods to retrieve data​
+Once the identity is loaded from an address, you can call the methods from the Identity object. Here is a basic example of the method to retrieve all claims of an identity by type.
+This example assumes you are using a version of NodeJs that supports async await
+(async () => {
+ const claims = await identity.getClaimsByType(1);
+
+
+ console.log(claims);
+ // Will return the parsed claims of the identity.
+})();
+
+
+
+
+Blockchain provider
+It is recommended that you connect with a Blockchain Provider to retrieve information directly from the Blockchain. If you don't intend to validate data with the Blockchain but only to use an Identity Provider, you can skip this step.
+The SDK uses Ethers to connect with the Ethereum network. Thus, any provider supported by Ethers can be used with the SDK. This means any standard web3 provider should be supported.
+Almost all methods of the SDK, when they imply reading or writing data to the Blockchain, accept a last optional argument where the provider or signer can be provided for the method. If it is not specified, the provider or signed used when instanciating the Identity with Identity.at(<address>, { provider }) will be used:
+const ethers = require('ethers');
+const identity = await IdentitySDK.Identity.at('0xadD92F8Ef0729E969c5a98Ea5740c9b644B362e3', { provider });
+
+
+await identity.addKey('0x..', 1, 3, { signer: someSigner, overrides: { gasPrice: ethers.parseUnits('2.0', 'gwei') } });
+Connect to a default provider​
+You can use any standard network name
+* "homestead"
+* "rinkeby"
+* "ropsten"
+* "kovan"
+let provider = ethers.getDefaultProvider('ropsten');
+let provider = ethers.getDefaultProvider('homestead');
+Connect to JSON RPC​
+When using the JSON-RPC API, the network will be automatically detected. The default is http://localhost:8545
+let httpProvider = new ethers.providers.JsonRpcProvider();
+Connect to any Web3 Provider​
+When using a Web3 provider, the network will be automatically detected.
+let currentProvider = new web3.providers.HttpProvider('http://localhost:8545');
+
+
+let web3Provider = new ethers.providers.Web3Provider(currentProvider);
+Connect to MetaMask (for in-browser usage)​
+The network will be automatically detected; if the network is changed in MetaMask, it causes a page refresh.
+let provider = new ethers.providers.Web3Provider(web3.currentProvider);
+Please refer to the Ethers Providers Documentation for more information.
+
+
+
+
+Deployment
+Using the Gateway (recommended)​
+A Gateway contract was developed to allow users to deploy their own identities using a managed Factory contract. This makes easier to deploy identities using the same address across multiple chains as long as the factory is deployed on the desired network.
+There are three differents ways and associated methods to deploy an ONCHAINID using a Gateway:
+* deployUsingGatewayForWallet deploys an identity for a given wallet address as a management key and as the salt. If the signer intends to deploy an identity for their own wallet, this is probably the method to use.
+* deployUsingGatewayWithSaltAndManagementKeys deploys an identity for a given wallet using a custom salt and a list of keys to add to the identity. The identity owner won't be added as a management key, but key hashes listed as management keys keys will. This is useful if the signer wants to deploy an identity for a wallet for other keys than the wallet (for instance if it was lost) of with more than one management key.
+* deployUsingGatewayWithSalt deploys an identity for a given wallet as a management key using a custom salt.
+These methods triggers a creation of a contract, therefore they do not return the deployed identity but instead the transaction to be awaited. The created identity address can be retrieved in the events associated with the transaction (albeit it can be pre-computed using the CREATE2 method, conveniently accessible via the Identity.computeDeploymentAddress({ factory, unprefixedSalt, implementationAuthority }) method).
+const expectedAddress = Identity.computeDeploymentAddress({
+ factory: '0x... Address of the factory contract - not the gateway contract.',
+ unprefixedSalt : 'custom salt or identity owner wallet',
+ implementationAuthorit: '0x... Address of the implementation authority contract used by the factory',
+});
+Except the deployUsingGatewayForWallet that has no specific protection, the methods requires a signature from an signer approved and trusted by the Gateway to deploy an identity using a custom salt and/or with a list of management keys.
+Authorized signers can sign the deployment:
+const expiry = BigNumber.from(new Date().getTime()).div(1000).add(2 * 24 * 60 * 60);
+const digest =
+ ethers.utils.keccak256(
+   ethers.utils.defaultAbiCoder.encode(
+     ['string', 'address', 'string', 'uint256'],
+     ['Authorize ONCHAINID deployment', '0x... identity owner', 'saltToUse', expiry],
+   ),
+ );
+const signature = await deploySigner.signMessage(
+ ethers.utils.arrayify(
+   digest,
+ ),
+);
+Or with management keys:
+const expiry = BigNumber.from(new Date().getTime()).div(1000).add(2 * 24 * 60 * 60);
+const digest =
+ ethers.utils.keccak256(
+   ethers.utils.defaultAbiCoder.encode(
+     ['string', 'address', 'string', 'bytes32[]', 'uint256'],
+     [
+       'Authorize ONCHAINID deployment',
+       '0x.... identity owner',
+       'saltToUse',
+       [
+         ethers.utils.keccak256(ethers.utils.defaultAbiCoder.encode(['address'], ['0x... address of management key'])),
+       ],
+       expiry,
+     ],
+   ),
+ );
+const signature = await deploySigner.signMessage(
+ ethers.utils.arrayify(
+   digest,
+ ),
+);
+const { IdentitySDK } = require('@onchain-id/identity-sdk');
+const provider = ethers.getDefaultProvider('kovan');
+const signer = new ethers.Wallet('private key', provider);
+
+
+const tx = await IdentitySDK.Identity.deployUsingGatewayForWallet({
+ gateway: gateway.address,
+ identityOwner: '0x...',
+}, { signer });
+const { IdentitySDK } = require('@onchain-id/identity-sdk');
+const provider = ethers.getDefaultProvider('kovan');
+const signer = new ethers.Wallet('private key', provider);
+
+
+const tx = await IdentitySDK.Identity.deployUsingGatewayWithSalt({
+ gateway: gateway.address,
+ identityOwner: '0x...',
+ salt: 'saltToUse',
+ managementKeys: [
+   IdentitySDK.utils.encodeAndHash(['address'], ['0x... address of management key']),
+ ],
+ signature: signature,
+ signatureExpiry: expiry,
+}, { signer });
+const { IdentitySDK } = require('@onchain-id/identity-sdk');
+const provider = ethers.getDefaultProvider('kovan');
+const signer = new ethers.Wallet('private key', provider);
+
+
+const tx = await IdentitySDK.Identity.deployUsingGatewayWithSaltAndManagementKeys({
+ gateway: gateway.address,
+ identityOwner: '0x...',
+ salt: 'saltToUse',
+ signature: signature,
+ signatureExpiry: expiry,
+}, { signer });
+Proxy​
+The Identity#deployNew() method triggers a deploy transaction and return the deploying Identity, you can then wait identity.deployed() for the contract to be deployed. The key from the signer used to deploy the Identity will be added as a MANAGEMENT Key of the Identity, hence giving them full access over the contract.
+const { IdentitySDK } = require('@onchain-id/identity-sdk');
+
+
+const provider = ethers.getDefaultProvider('kovan');
+
+
+const DEPLOY_PRIVATE_KEY = 'deploy_private_key';
+const deployWallet = new IdentitySDK.Providers.Wallet(DEPLOY_PRIVATE_KEY, provider);
+
+
+const MANAGEMENT_KEY = '0x...management key';
+
+
+(async () => {
+ // Deploy a new Identity
+ const identity = await IdentitySDK.Identity.deployNew({
+   implementationAuthority: IdentitySDK.constants.implementationAuthorities.kovan, // Or provide your own address.
+   managementKey: MANAGEMENT_KEY,
+ }, {
+   signer: deployWallet,
+ }).then(identity => identity.deployed());
+})();
+Standalone​
+To deploy identities without using proxies or implementation authorities, please use the smart contract bytecodes and ABIs provided in the @onchain-id/solidity package. You'll also need a blockchain library, such as ethers.
+import ONCHAINID from "@onchain-id/solidity";
+import { ethers } from 'ethers';
+
+
+(async () => {
+   const provider = ethers.getDefaultProvider('kovan');
+   const signer = new ethers.Wallet('private key', provider);
+  
+   const identityFactory = new ethers.ContractFactory(
+       ONCHAINID.contracts.Identity.abi,
+       ONCHAINID.contracts.Identity.bytecode,
+       signer
+   );
+   const identity = await identityFactory.deploy(
+       await signer.getAddress(),
+       false,
+   );
+   // waiting for the contract to be deployed
+   await identity.deployed();
+})()
+
+
+Working with identities
+Generic operations​
+Load an Identity​
+Use the Identity#at() method to instantiate an Identity from an existing address. This operation supports resolving ENS.
+const { IdentitySDK } = require('@onchain-id/identity-sdk');
+const provider = ethers.getDefaultProvider('kovan');
+
+
+const identity = await IdentitySDK.Identity.at('identity.tokeny.xyz', { provider });
+Loading an ONCHAINID Contract​
+You may need to execute functions or read data from ONCHAINID Contracts that are not exposed by the Identity SDK. The .instantiateAtAddress() method returns a Ethers Contract instance loaded with the full ONCHAINID abi.
+const { IdentitySDK } = require('@onchain-id/identity-sdk');
+
+
+const provider = new IdentitySDK.Providers.JsonRpcProvider();
+
+
+(async () => {
+ const identity = new IdentitySDK.Identity(); // Create the Identity Object
+
+
+ console.log(identity.instantiateAtAddress('0xadD92F8Ef0729E969c5a98Ea5740c9b644B362e3', { provider })); // Get the instance of the Identity
+
+
+ console.log(await identity.instance.getClaimIdsByTopic(1)); // Call directly a function from the Contract.
+})();
+Managing keys​
+Keys are addresses (or signing keys) designed as being able to perform operation on or from the Identity. For instance, a wallet registered as a MANAGEMENT Key should be able to manage other keys on the Identity.
+In the current implementation, keys are stored as HASH of the key itself. To generate a proper hash for a wallet, use the provided helper method. This is a hidden call to a keccak256 hash of an abi encoded (as defined by Ethereum standard. On a smart contract, the same hash would generated with keccak256(abi.encode(walletAddress)).
+const hash = IdentitySDK.utils.encodeAndHash(['address'], [walletAddress]);
+Add a purpose to a key or add a new key​
+A key is added with a specific purpose. This call will register the key if it doesn't exist yet on the identity contract with the given purpose, or add the purpose to the key if it already exists on the contract. You must also specify the type of the key (ECDSA).
+Both key purposes and types have enums you can get from IdentitySDK.utils.enums.
+const identity = await Identity.at('<address>', { provider });
+
+
+const addKeyTransaction = await identity.addKey(IdentitySDK.utils.encodeAndHash(['address'], [walletAddress]), IdentitySDK.utils.enums.KeyPurpose.MANAGEMENT, IdentitySDK.utils.enums.KeyType.ECDSA, { signer });
+The signer must be a MANAGEMENT key on the Identity to perform the operation.
+Get management keys of an Identity​
+import { Identity, IdentitySDK } from "@onchain-id/identity-sdk";
+import { ethers } from 'ethers';
+
+
+(async () => {
+   const address = '0x..........' /* address of the identity you want to instanciate */
+   const provider = ethers.getDefaultProvider('kovan');
+
+
+   const identity = await Identity.at(address, provider);
+
+
+   const keys = await identity.getKeysByPurpose(
+       IdentitySDK.utils.enums.KeyPurpose.MANAGEMENT
+   );
+   const hashedAddress = IdentitySDK.utils.encodeAndHash(["address"], ['0x...your wallet address']);
+   for (const key of keys) {
+       if (key.key === hashedAddress) {
+           console.log("The identity has been instantiates we verified the wallet used is a manager of the identity");
+       }
+   }
+})()
+Claims​
+Add a claim to an identity​
+Remember that to add a claim to an identity, the signer of the transaction must have a CLAIM or MANAGEMENT key over the identity.
+import { Identity, IdentitySDK } from "@onchain-id/identity-sdk";
+import { ethers } from 'ethers';
+
+
+(async () => {
+   const address = '0x..........' /* address of the identity you want to instanciate */
+   const provider = ethers.getDefaultProvider('kovan');
+   const signer = new ethers.Wallet('private key', provider);
+
+
+   const identity = await Identity.at(address, signer);
+
+
+   // prepare the claim
+   const claim = new IdentitySDK.Claim({
+       address: '/* identity address */',
+       data: '/* data of the claim */',
+       issuer: '/* issuer address */',
+       emissionDate: Date.now(),
+       scheme: '/* scheme of the claim */',
+       topic: '/* topic of the claim */',
+   });
+
+
+   // sign the claim
+   const customSigner = new IdentitySDK.SignerModule({
+       publicKey: await signer.getAddress(),
+       signMessage: signer.signMessage.bind(this.signer)
+   });
+   await claim.sign(customSigner);
+
+
+   // emit the claim
+   const tx = await identity.addClaim(claim.topic, claim.scheme, claim.issuer, claim.signature, claim.data, claim.uri, { signer });
+   await tx.wait();
+})();
+Get claims of an Identity​
+This method returns only claims that are stored on the ONCHAINID contract. Claims returned might not be valid anymore, so you may need to verify their validity against the Claim Issuer that issued these claims (usually by calling .isClaimValid() on the Claim Issuer contract).
+const { IdentitySDK } = require('@onchain-id/identity-sdk');
+
+
+const provider = ethers.getDefaultProvider('kovan');
+
+
+(async () => {
+   const identity = new IdentitySDK.Identity('0xadD92F8Ef0729E969c5a98Ea5740c9b644B362e3', provider);
+  
+   const claims = await identity.getClaimsByTopic(109741294);
+  
+   console.log(claims);
+})();
+
+
+
+
+Deploy an implementation and an implementation authority
+If you don't want to rely on public implementation authorities, and don't want to deploy full identities, you may want to deploy your own implementation and/or your own implementation authority.
+You will need the contract package at @onchain-id/solidity with the bytecode and the ABIs of the contracts.
+Deploy an implementation​
+const ethers = require('ethers');
+const OnchainID = require('@onchain-id/solidity');
+
+
+(async () => {
+ const provider = ethers.getDefaultProvider('kovan');
+ const signer = new ethers.Wallet('<private key>', provider);
+
+
+ const implementation = await new ethers.ContractFactory(
+   OnchainID.contracts.Identity.abi,
+   OnchainID.contracts.Identity.bytecode,
+   signer
+ ).deploy(
+   signer.address,
+   true,
+ );
+
+
+ await implementation.deployed();
+
+
+ console.log(implementation.address);
+})();
+Deploy an implementation authority​
+Using you own authority brings more confidence about when to update your ONCHAINID to a new version.
+const ethers = require('ethers');
+const OnchainID = require('@onchain-id/solidity');
+
+
+(async () => {
+ const provider = ethers.getDefaultProvider('kovan');
+ const signer = new ethers.Wallet('<private key>', provider);
+
+
+ const implementationAddress = '<implementation address>';
+
+
+ const implementationAuthority = await new ethers.ContractFactory(
+   OnchainID.contracts.ImplementationAuthority.abi,
+   OnchainID.contracts.ImplementationAuthority.bytecode,
+   signer
+ ).deploy(implementationAddress);
+
+
+ await implementationAuthority.deployed();
+
+
+ console.log(implementationAuthority.address);
+})();
+Signer Module
+Signing a claim requires a Signer Module.
+A SignerModule must expose a .getPublicKey() and a .signMessage(message: string) functions.
+This is, for instance, a valid SignerModule:
+const jsrasign = require('jsrasign');
+
+
+const signer = new SignerModule({
+   getPublicKey: async () => ({
+       key: "-----BEGIN CERTIFICATE----- my_super_public_key -----END CERTIFICATE-----",
+       type: "X.509",
+       signingMethod: "SHA-256",
+   }),
+   signMessage: async (message) => {
+       const signer = new jsrsasign.Signature({ alg: 'SHA256withRSA' });
+       signer.init("-----BEGIN CERTIFICATE----- my_super_PRIVATE_no_really_super_secret_PRIVATE_key -----END CERTIFICATE-----");
+       signer.updateString(message);
+       return signer.sign();
+   },
+});
+As a convenient method, a SignerModule can also be created from an ethers Wallet:
+const wallet = new IdentitySDK.Providers.Wallet('PRIVATE_KEY', provider);
+const signer = new IdentitySDK.SignerModule(wallet);
+It can be used in functions such as Claim.requestAccess():
+claim.requestAccess(IdentitySDK.utils.enums.AccessGrantType.PERSISTENT, signer);
+test
+azdazd
+
+
+
+
+Claims constants
+These are the list of claim topics that are standard for ONCHAINID Identities and some other standards like T-REX.
+A JSON description of these topics, completed with the parsing method description can be downloaded from the Github repository.
+Claim Topic
+	Name
+	Description
+	Scheme
+	Data
+	10101000100000
+	INDIVIDUAL_INVESTOR
+	Investor is an individual.
+	EMPTY
+	true
+	10101000100001
+	BASIC_IDENTITY
+	Combination of name, gender and birth date, hashed.
+	STRING
+	0x0999ddefa34bc...
+	10101000100002
+	CONTACT_ADDRESS
+	Combination of residence, email, phone, hashed.
+	STRING
+	0x0999ddefa34bc...
+	10101000100003
+	SOVEREIGN_IDENTITY
+	Combination of ID number, TIN, hashed.
+	STRING
+	0x0999ddefa34bc...
+	10101000100004
+	POLITICALLY_EXPOSED
+	Investor is politically exposed, data is PEP type.
+	STRING
+	elected
+	10101000200000
+	INSTITUTIONAL_INVESTOR
+	Investor is an institution.
+	EMPTY
+	
+
+	10101000200001
+	INSTITUTION_INFORMATION
+	Concatenation of company name and type, hashed.
+	STRING
+	0x0999ddefa34bc...
+	10101000200002
+	INSTITUTION_DETAILS
+	Concatenation of incorporation date, sector and form, hashed.
+	STRING
+	0x0999ddefa34bc...
+	10101000200008
+	LEGAL_IDENTIFICATION
+	Concatenation of registration number, VAT, LEI, hashed.
+	STRING
+	0x0999ddefa34bc...
+	10101000200009
+	INSTITUTIONAL_ROLE
+	Role of identity owner investor in the institution (if relevant).
+	STRING
+	Some role
+	10101000300002
+	COUNTRY
+	Country ISO-3 in clear.
+	STRING
+	FRA
+	10101000300003
+	AML_STATUS
+	AML status first, then reason in clear, and details hashed.
+	URL_ENCODED
+	status=0&reason=Description&hash=0x0999ddefa...34bc
+	10101000300004
+	ETH_WALLETS
+	List of ETH Wallet address allowed to receive tokens for this identity.
+	ARRAY of STRING
+	0x0999ddefa34bc,0x0999ddefa34bc,0x0999ddefa34bc
+	10101000300005
+	BANK_ACCOUNTS
+	List of Bank Accounts data hash (currencies, IBAN, BIC).
+	KEY_PAIRS
+	accountA=0x0999ddefa34bc;accountB=0x0999ddefa34bc
+	10101000300006
+	CRYPTO_ACCOUNTS
+	List of Crypto Accounts data hash (currency and wallet address).
+	KEY_PAIRS
+	accountA=0x0999ddefa34bc;accountB=0x0999ddefa34bc
+	1010101xxxxxxx
+	SPECIFIC_KYC_STATUS
+	Details required by offering for the KYC status, hashed.
+	STRING
+	0x0999ddefa34bc...
+	1010102xxxxxxx
+	SPECIFIC_ACCREDITATION
+	Investor is accredited by issuer, or status is irrelevant.
+	INTEGER
+	1 for accredited, 2 for irrelevant.
+	These are the list of claim schemes that are standard for ONCHAINID Identities and some other standards like T-REX.
+A JSON description of these schemes can be downloaded from the Github repository.
+Claim Scheme
+	Name
+	Description
+	Example
+	10101000666002
+	URL_ENCODED
+	URL Encoded string
+	key_a=VALUE_A&key_b=VALUE_B
+	10101000666003
+	STRING
+	Clear string
+	VALUE_A
+	10101000666004
+	EMPTY
+	Empty data
+	
+
+	These are the standard information types for Identity Providers.
+Information Type
+	Description
+	Scheme
+	email
+	Email
+	STRING
+	first_name
+	First name
+	STRING
+	last_name
+	Last name
+	STRING
+	nationality
+	National (not residential country)
+	STRING
