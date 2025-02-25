@@ -24,9 +24,9 @@ contract IdentityFactory is Ownable {
     event TokenFactoryAdded(address indexed factory);
     event TokenFactoryRemoved(address indexed factory);
     
-    constructor(address implementationAuthority) {
-        require(implementationAuthority != address(0), "Invalid implementation authority");
-        _implementationAuthority = implementationAuthority;
+    constructor(address implementationAuthority_) {
+        require(implementationAuthority_ != address(0), "Invalid implementation authority");
+        _implementationAuthority = implementationAuthority_;
     }
     
     /**
@@ -34,8 +34,26 @@ contract IdentityFactory is Ownable {
      * @param _salt Unique identifier for the identity
      */
     function createIdentity(string calldata _salt) external returns (address) {
+        return _createIdentity(_salt, msg.sender);
+    }
+    
+    /**
+     * @dev Creates a new identity with a deterministic address using CREATE2 on behalf of another user
+     * @param user The user for whom the identity is being created
+     * @param _salt Unique identifier for the identity
+     */
+    function createIdentityFor(address user, string calldata _salt) external onlyOwner returns (address) {
+        return _createIdentity(_salt, user);
+    }
+    
+    /**
+     * @dev Internal function with shared logic for creating identities
+     * @param _salt Unique identifier for the identity
+     * @param user The user for whom the identity is being created
+     */
+    function _createIdentity(string calldata _salt, address user) internal returns (address) {
         require(!_saltTaken[_salt], "Salt already taken");
-        require(_userIdentity[msg.sender] == address(0), "Wallet already has identity");
+        require(_userIdentity[user] == address(0), "Wallet already has identity");
         
         // Create clone of implementation
         address identity = Clones.cloneDeterministic(
@@ -43,16 +61,16 @@ contract IdentityFactory is Ownable {
             keccak256(abi.encodePacked(_salt))
         );
         
-        // Initialize the identity
-        Identity(identity).initialize(msg.sender);
+        // Initialize the identity with the user as owner
+        Identity(identity).initialize(user);
         
         // Update mappings
         _saltTaken[_salt] = true;
-        _userIdentity[msg.sender] = identity;
-        _wallets[identity].push(msg.sender);
+        _userIdentity[user] = identity;
+        _wallets[identity].push(user);
         
-        emit IdentityCreated(msg.sender, identity, _salt);
-        emit WalletLinked(msg.sender, identity);
+        emit IdentityCreated(user, identity, _salt);
+        emit WalletLinked(user, identity);
         
         return identity;
     }

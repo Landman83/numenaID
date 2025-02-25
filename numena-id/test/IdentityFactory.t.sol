@@ -172,4 +172,44 @@ contract IdentityFactoryTest is Test {
             "Wrong implementation authority"
         );
     }
+    
+    function testCreateIdentityFor() public {
+        string memory salt = "test-salt";
+        
+        // Only owner can create identity for others
+        vm.prank(owner);
+        address identityAddress = factory.createIdentityFor(user1, salt);
+        
+        // Verify identity was created and linked correctly
+        assertTrue(identityAddress != address(0), "Identity not created");
+        assertEq(factory.getIdentity(user1), identityAddress, "Identity not linked to user");
+        
+        // Verify user1 is the owner of the identity
+        Identity identity = Identity(identityAddress);
+        assertEq(identity.owner(), user1, "Wrong identity owner");
+    }
+    
+    function testNonOwnerCannotCreateIdentityForOthers() public {
+        vm.prank(user1);
+        vm.expectRevert("Ownable: caller is not the owner");
+        factory.createIdentityFor(user2, "test-salt");
+    }
+    
+    function testCannotCreateDuplicateIdentityFor() public {
+        string memory salt = "test-salt";
+        
+        // Create first identity
+        vm.prank(owner);
+        factory.createIdentityFor(user1, salt);
+        
+        // Try to create another identity for same user
+        vm.prank(owner);
+        vm.expectRevert("Wallet already has identity");
+        factory.createIdentityFor(user1, "different-salt");
+        
+        // Try to create identity with same salt for different user
+        vm.prank(owner);
+        vm.expectRevert("Salt already taken");
+        factory.createIdentityFor(user2, salt);
+    }
 }
